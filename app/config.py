@@ -6,3 +6,4 @@ class Settings(BaseSettings):
 
     database_url: str | None = None
     jwt_secret: str | None = None
+    cors_origins: list[str] = []
