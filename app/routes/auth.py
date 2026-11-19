@@ -66,8 +66,7 @@ def login(
     return TokenResponse(access_token=create_token(claims, secret))
 
 
-@router.get("/session", response_model=SessionClaims)
-def session(
+def authenticated_session(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     secret: str = Depends(signing_secret),
 ) -> SessionClaims:
@@ -79,3 +78,8 @@ def session(
         raise unauthorized("Sesión expirada") from None
     except (jwt.InvalidTokenError, ValidationError):
         raise unauthorized("Token inválido") from None
+
+
+@router.get("/session", response_model=SessionClaims)
+def session(claims: SessionClaims = Depends(authenticated_session)) -> SessionClaims:
+    return claims

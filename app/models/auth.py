@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from sqlalchemy import Column, ForeignKey, MetaData, String, Table, create_engine, select
+from sqlalchemy import Boolean, Column, ForeignKey, MetaData, String, Table, create_engine, select
 
 metadata = MetaData()
 accounts = Table(
@@ -16,6 +16,10 @@ account_ranches = Table(
     metadata,
     Column("account_id", ForeignKey("auth_accounts.id"), primary_key=True),
     Column("ranch_id", String(64), primary_key=True),
+    Column("can_read", Boolean, nullable=False, server_default="0"),
+    Column("can_capture", Boolean, nullable=False, server_default="0"),
+    Column("can_edit", Boolean, nullable=False, server_default="0"),
+    Column("can_export", Boolean, nullable=False, server_default="0"),
 )
 
 
@@ -39,3 +43,19 @@ def find_account(database_url: str, username: str):
     return account.id, account.password_hash, account.role, [
         row.ranch_id for row in rows if row.ranch_id is not None
     ]
+
+
+def find_ranch_access(database_url: str, account_id: str, ranch_id: str):
+    query = (
+        select(
+            accounts.c.role,
+            account_ranches.c.can_read,
+            account_ranches.c.can_capture,
+            account_ranches.c.can_edit,
+            account_ranches.c.can_export,
+        )
+        .select_from(accounts.join(account_ranches))
+        .where(accounts.c.id == account_id, account_ranches.c.ranch_id == ranch_id)
+    )
+    with auth_engine(database_url).connect() as connection:
+        return connection.execute(query).mappings().one_or_none()

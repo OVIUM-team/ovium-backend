@@ -45,3 +45,17 @@ con `--host 0.0.0.0` dentro del contenedor.
   La migración y los datos semilla del equipo deben proveer o adaptar ese
   esquema y guardar únicamente hashes Argon2 generados con
   `app.services.auth.password_hasher.hash`.
+
+### Permisos por rancho
+
+Para una ruta bajo `/ranchos/{ranch_id}`, usa
+`Depends(require_ranch_access(RanchPermission.READ))` (o `CAPTURE`, `EDIT`,
+`EXPORT` según la operación). En cada petición se consulta el rol y la
+membresía vigentes en la base. Filtra también las lecturas y escrituras del
+recurso por el mismo `ranch_id`; las rutas no deben aceptar un rancho
+diferente en el cuerpo de la petición.
+
+El modelo de referencia guarda las cuatro autorizaciones de cada rama en
+`auth_account_ranches`, apagadas por defecto. Para técnicos y asociaciones,
+el modelo requiere una membresía por cada rancho afiliado. La integración
+con las migraciones debe conectar ese acceso con las afiliaciones vigentes.
