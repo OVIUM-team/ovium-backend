@@ -1,25 +1,36 @@
 from functools import lru_cache
 
-from sqlalchemy import Boolean, Column, ForeignKey, MetaData, String, Table, create_engine, select
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint, Uuid, create_engine, select
 
 metadata = MetaData()
+uuid = Uuid(as_uuid=False)
 accounts = Table(
-    "auth_accounts",
-    metadata,
-    Column("id", String(64), primary_key=True),
-    Column("username", String(255), unique=True, nullable=False),
+    "usuario", metadata,
+    Column("id", uuid, primary_key=True),
+    Column("nombre", String(255), nullable=False),
+    Column("email", String(255), unique=True, nullable=False),
     Column("password_hash", String(255), nullable=False),
-    Column("role", String(64), nullable=False),
+    Column("tipo", String(64), nullable=False),
+)
+ranches = Table(
+    "rancho", metadata,
+    Column("id", uuid, primary_key=True),
+    Column("nombre", String(255), nullable=False),
+    Column("domicilio", String(255)),
+    Column("propietario_id", ForeignKey("usuario.id"), nullable=False, unique=True),
+    Column("dias_lactancia", Integer, nullable=False),
 )
 account_ranches = Table(
-    "auth_account_ranches",
-    metadata,
-    Column("account_id", ForeignKey("auth_accounts.id"), primary_key=True),
-    Column("ranch_id", String(64), primary_key=True),
-    Column("can_read", Boolean, nullable=False, server_default="0"),
-    Column("can_capture", Boolean, nullable=False, server_default="0"),
-    Column("can_edit", Boolean, nullable=False, server_default="0"),
-    Column("can_export", Boolean, nullable=False, server_default="0"),
+    "usuario_rancho", metadata,
+    Column("id", uuid, primary_key=True),
+    Column("usuario_id", ForeignKey("usuario.id"), nullable=False),
+    Column("rancho_id", ForeignKey("rancho.id"), nullable=False),
+    Column("rol", String(64), nullable=False),
+    Column("puede_leer", Boolean, nullable=False, server_default="0"),
+    Column("puede_capturar", Boolean, nullable=False, server_default="0"),
+    Column("puede_editar", Boolean, nullable=False, server_default="0"),
+    Column("puede_exportar", Boolean, nullable=False, server_default="0"),
+    UniqueConstraint("usuario_id", "rancho_id"),
 )
 
 
@@ -29,33 +40,20 @@ def auth_engine(database_url: str):
 
 
 def find_account(database_url: str, username: str):
-    query = (
-        select(accounts.c.id, accounts.c.password_hash, accounts.c.role, account_ranches.c.ranch_id)
-        .select_from(accounts.outerjoin(account_ranches))
-        .where(accounts.c.username == username)
-        .order_by(account_ranches.c.ranch_id)
-    )
     with auth_engine(database_url).connect() as connection:
-        rows = connection.execute(query).all()
-    if not rows:
-        return None
-    account = rows[0]
-    return account.id, account.password_hash, account.role, [
-        row.ranch_id for row in rows if row.ranch_id is not None
-    ]
-
-
-def find_ranch_access(database_url: str, account_id: str, ranch_id: str):
-    query = (
-        select(
-            accounts.c.role,
-            account_ranches.c.can_read,
-            account_ranches.c.can_capture,
-            account_ranches.c.can_edit,
-            account_ranches.c.can_export,
-        )
-        .select_from(accounts.join(account_ranches))
-        .where(accounts.c.id == account_id, account_ranches.c.ranch_id == ranch_id)
-    )
-    with auth_engine(database_url).connect() as connection:
-        return connection.execute(query).mappings().one_or_none()
+        account = connection.execute(select(accounts).where(accounts.c.email == username)).mappings().one_or_none()
+        if not account:
+            return None
+        memberships = connection.execute(
+            select(account_ranches).where(account_ranches.c.usuario_id == account["id"])
+        ).mappings().all()
+        role = account["tipo"]
+        if any(member["rol"] == "rama" for member in memberships):
+            role = "rama"
+            memberships = [member for member in memberships if member["rol"] == "rama"]
+        ranch_ids = {member["rancho_id"] for member in memberships}
+        if role == "productor":
+            ranch_ids = set(connection.scalars(select(ranches.c.id).where(ranches.c.propietario_id == account["id"])))
+        elif role == "asociacion":
+            ranch_ids = set(connection.scalars(select(ranches.c.id)))
+        return account["id"], account["password_hash"], role, sorted(ranch_ids)
