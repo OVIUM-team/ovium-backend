@@ -28,3 +28,20 @@ locales en `.env`, que Git ignora.
 persistencia y `app/schemas` para los esquemas de entrada y salida.
 Para Docker Compose, el punto de entrada es `app.main:app`. Inicia Uvicorn
 con `--host 0.0.0.0` dentro del contenedor.
+
+## Autenticación
+
+- `POST /auth/login` recibe JSON con `username` y `password`. Devuelve
+  `access_token` y `token_type` cuando las credenciales son válidas, o HTTP 401
+  cuando son incorrectas.
+- `GET /auth/session` recibe `Authorization: Bearer <token>`. Devuelve
+  `sub`, `role` y `ranch_ids`, o HTTP 401 si el token falta, es inválido o expiró.
+  El JWT vence en 30 minutos.
+- Configura `JWT_SECRET` con un valor aleatorio de al menos 32 bytes. Para
+  PostgreSQL, usa una URL SQLAlchemy con el prefijo `postgresql+psycopg://`.
+- El acceso a cuentas está aislado en `app/models/auth.py`. Mientras se integra
+  con las migraciones del núcleo, el modelo de referencia usa `auth_accounts`
+  y `auth_account_ranches`. El servidor no crea tablas ni datos al arrancar.
+  La migración y los datos semilla del equipo deben proveer o adaptar ese
+  esquema y guardar únicamente hashes Argon2 generados con
+  `app.services.auth.password_hasher.hash`.
