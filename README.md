@@ -71,3 +71,93 @@ Para correr las pruebas de integración con una base SQLite temporal:
 python -m pip install httpx httpx2
 python -m unittest discover -s tests -v
 ```
+
+## Migraciones y datos semilla (Diana)
+
+Instala `requirements.txt` y configura `DATABASE_URL` en `.env` para una base
+SQL Server **vacía**. En Windows se puede usar LocalDB con autenticación integrada:
+
+```text
+DATABASE_URL=mssql+pyodbc://@localhost/OviumPruebas?driver=ODBC+Driver+18+for+SQL+Server&trusted_connection=yes&TrustServerCertificate=yes
+```
+
+El ejemplo anterior corresponde a una instancia local normal. Para LocalDB,
+`python scripts/create_test_database.py` crea una base nueva con nombre
+`OviumPruebas_<id>` y devuelve su URL exacta. Requiere LocalDB instalado y la
+instancia `MSSQLLocalDB` iniciada (`sqllocaldb start MSSQLLocalDB`). No borra ni
+reutiliza bases existentes. `TrustServerCertificate=yes` es solo para estas
+pruebas locales; en despliegue se debe validar el certificado del servidor.
+
+```sh
+python -m alembic upgrade head
+python -m alembic current
+```
+
+Revisiones, en orden:
+
+1. `0001_nucleo`: usuarios, ranchos, membresías, razas, animales e identificadores.
+2. `0002_eventos`: catálogos, partos, crías, pesajes, destetes, bajas, sanidad y fotos.
+3. `0003_auditoria`: correcciones inmutables y operaciones de sincronización con ID único.
+4. `0004_ajuste_modelo`: mediciones de evaluación y lactancia de 60/75/90 días (75 por defecto).
+
+El [modelo ER actualizado](docs/MODELO-ER.md) describe las columnas y relaciones.
+No se usa `metadata.create_all` para desplegar. Las revisiones contienen sus
+propias definiciones congeladas y no importan los modelos actuales.
+
+**Bases preexistentes:** estas migraciones iniciales no convierten el script
+experimental `base_datos.sql` (tablas PascalCase e IDs enteros) ni bases creadas
+manualmente. No ejecutes `stamp head` para saltarte esa diferencia. Se requiere
+un respaldo, comparación del esquema y un plan de conversión separado. Los
+días de lactancia existentes fuera de 60/75/90 provocan un error explícito en
+la revisión 0004; no se sustituyen silenciosamente.
+
+### Datos ficticios de desarrollo
+
+Después de migrar, define `DEMO_PASSWORD` en el entorno (mínimo 12 caracteres)
+y ejecuta:
+
+```sh
+python -m app.seed --demo
+```
+
+El script crea catálogos de razas ovinas, partos de simple a quíntuple,
+concepción MN/IA/TE, tipos de pesaje y un rancho demo con estas cuentas:
+
+| Rol de sesión | Correo |
+|---|---|
+| Productor | productor@demo.ovium.test |
+| Rama | rama@demo.ovium.test |
+| Técnico | tecnico@demo.ovium.test |
+| Asociación | asociacion@demo.ovium.test |
+
+Usan la contraseña proporcionada, almacenada con Argon2 mediante el mismo
+servicio que usa el login. Nunca se imprime ni se guarda la contraseña en Git.
+La rama se representa como `usuario.tipo=productor` y `usuario_rancho.rol=rama`,
+según la API existente. Sus permisos demo están habilitados explícitamente.
+La carga es transaccional y repetible: no duplica registros, no reinicia claves
+existentes y aborta ante datos demo modificados en vez de sobrescribirlos.
+Ejecutar solo en desarrollo; no cargar usuarios demo en producción.
+
+### Validación
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+Las pruebas migran una SQLite temporal y validan repetibilidad, login de los
+cuatro roles, identificadores únicos, integridad de relaciones, conservación
+del animal dado de baja, inmutabilidad de correcciones y rechazo de operaciones
+duplicadas. También compilan todas las revisiones al dialecto SQL Server.
+
+Para ejecutar la prueba integral en SQL Server, define
+`OVIUM_TEST_DATABASE_URL` con la URL de una base **nueva y vacía** y ejecuta
+`python -m unittest discover -s tests -p test_database_workflow.py -v`.
+La prueba conserva sus datos para inspección y se niega a usar una base con
+tablas existentes. El workflow de GitHub ejecuta ambas variantes.
+
+El registro de `sync_operacion` aporta la clave única y los estados; la futura
+API de sincronización deberá guardar operación y evento en la misma transacción.
+Las APIs nuevas de eventos, corrección y sincronización pertenecen a otras tarjetas.
+El futuro registro de partos debe enviar `cierre_edicion` a 30 días de la captura.
+El trigger impide cambiar un parto bloqueado, vencido o que ya tiene correcciones.

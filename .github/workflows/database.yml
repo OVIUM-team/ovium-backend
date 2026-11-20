@@ -1,0 +1,28 @@
+name: Database migrations and seed
+on:
+  pull_request:
+  push:
+    branches: ["feature/**", develop]
+permissions:
+  contents: read
+jobs:
+  database:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r requirements-dev.txt
+      - name: SQLite, API and SQL Server compilation
+        run: python -m unittest discover -s tests -v
+      - name: Create isolated SQL Server database
+        shell: pwsh
+        run: |
+          sqllocaldb start MSSQLLocalDB
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testUrl = python scripts/create_test_database.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "OVIUM_TEST_DATABASE_URL=$testUrl" >> $env:GITHUB_ENV
+      - name: Run workflow against SQL Server
+        run: python -m unittest discover -s tests -p test_database_workflow.py -v
