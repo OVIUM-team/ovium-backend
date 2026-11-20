@@ -71,3 +71,58 @@ Para correr las pruebas de integración con una base SQLite temporal:
 python -m pip install httpx httpx2
 python -m unittest discover -s tests -v
 ```
+
+## Entorno local con Docker Compose
+
+En Windows, abre Docker Desktop en modo de contenedores Linux. Desde PowerShell
+en la carpeta `ovium-backend`, copia la configuración si todavía no tienes
+un archivo `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edita `.env` y asigna a `MSSQL_SA_PASSWORD` una contraseña local de al menos
+8 caracteres que combine mayúsculas, minúsculas, números y símbolos. Puedes
+ponerla entre comillas simples para evitar que Compose interprete símbolos
+como `$`. Si ya tienes `.env`, agrega esta variable a tu archivo.
+
+Para verificar la conexión desde la API, copia el ejemplo comentado de
+`DATABASE_URL` de `.env.example` a `.env`. Quita el `#` y cambia
+`TU_CLAVE_CODIFICADA` por la contraseña de `sa` codificada para URL.
+En PowerShell puedes obtenerla con `[uri]::EscapeDataString('tu contraseña local')`.
+El ejemplo usa `master` para la prueba inicial. Para usar las rutas de la API,
+configura la base de Ovium con las migraciones aplicadas y define `JWT_SECRET`.
+
+```powershell
+docker compose up --build -d --wait
+docker compose ps
+Invoke-RestMethod http://localhost:8000/health
+```
+
+SQL Server Express conserva sus datos en el volumen `sqlserver-data`. Desde
+Windows, las herramientas de SQL Server y Alembic pueden conectarse a
+`127.0.0.1,1433`. Desde la API en Docker, el servidor es `db:1433`.
+
+`/health` verifica que la API responda por HTTP. Para verificar también el
+driver y la conexión a SQL Server usando `DATABASE_URL`, ejecuta lo siguiente
+desde PowerShell en el backend:
+
+```powershell
+docker compose exec -T api python -c "from app.config import Settings; from sqlalchemy import create_engine, text; url = Settings().database_url; assert url, 'Define DATABASE_URL en .env'; engine = create_engine(url, connect_args=dict(timeout=5)); conn = engine.connect(); result = conn.execute(text('SELECT 1')).scalar_one(); conn.close(); engine.dispose(); print(result)"
+```
+
+La consulta debe imprimir `1`.
+
+Para levantar también el portal, coloca ambos repositorios en la misma carpeta,
+con los nombres `ovium-backend` y `ovium-web`. En el repo web usa
+`feature/proyecto-web-base` o una rama que ya incluya ese proyecto, y conserva
+`http://localhost:5173` en `CORS_ORIGINS` del backend. Desde `ovium-backend`:
+
+```sh
+docker compose --profile web up --build -d --wait
+```
+
+Abre http://localhost:5173. Para ver los registros usa `docker compose logs`.
+Para detener los servicios conservando los datos usa
+`docker compose --profile web down`.
