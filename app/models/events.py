@@ -58,8 +58,12 @@ weights = Table(
     Column("fecha", Date, nullable=False),
     Column("tipo_pesaje_id", ForeignKey("tipo_pesaje.id"), nullable=False),
     Column("peso", Numeric(8, 2), nullable=False),
+    Column("circunferencia_testicular", Numeric(8, 2)),
+    Column("peso_evaluacion", Numeric(8, 2)),
     Column("registrado_por", ForeignKey("usuario.id"), nullable=False),
     CheckConstraint("peso > 0", name="ck_pesaje_peso"),
+    CheckConstraint("circunferencia_testicular IS NULL OR circunferencia_testicular > 0", name="ck_pesaje_circunferencia"),
+    CheckConstraint("peso_evaluacion IS NULL OR peso_evaluacion > 0", name="ck_pesaje_evaluacion"),
     UniqueConstraint("id", "animal_id", name="uq_pesaje_animal"),
 )
 Index("ix_pesaje_animal_fecha", weights.c.animal_id, weights.c.fecha)
