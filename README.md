@@ -32,8 +32,8 @@ con `--host 0.0.0.0` dentro del contenedor.
 ## Portal web
 
 Configura `CORS_ORIGINS` como lista JSON de orígenes exactos del portal. Para
-Vite en local, usa `CORS_ORIGINS=["http://localhost:5173"]` en `.env` y reinicia
-la API. En despliegue, usa el origen HTTPS del portal, sin ruta ni barra final.
+Vite en local, `.env.example` ya incluye `CORS_ORIGINS=["http://localhost:5173"]`.
+Copia ese valor a `.env` si ya tienes uno y reinicia la API. En despliegue, usa el origen HTTPS del portal, sin ruta ni barra final.
 Si la lista está vacía, las peticiones desde otros orígenes quedan bloqueadas
 por el navegador.
 
