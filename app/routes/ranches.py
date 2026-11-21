@@ -1,4 +1,5 @@
 from uuid import UUID, uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/ranchos", tags=["ranchos"], route_class=AuthRoute)
 class RanchData(BaseModel):
     nombre: str = Field(min_length=1, max_length=255)
     domicilio: str | None = Field(default=None, max_length=255)
-    dias_lactancia: int = Field(default=75, ge=1)
+    dias_lactancia: Literal[60, 75, 90] = 75
 
 
 class BranchData(BaseModel):

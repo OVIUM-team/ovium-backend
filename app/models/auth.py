@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint, Uuid, create_engine, select
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint, Uuid, create_engine, select
 
 metadata = MetaData()
 uuid = Uuid(as_uuid=False)
@@ -18,7 +18,8 @@ ranches = Table(
     Column("nombre", String(255), nullable=False),
     Column("domicilio", String(255)),
     Column("propietario_id", ForeignKey("usuario.id"), nullable=False, unique=True),
-    Column("dias_lactancia", Integer, nullable=False),
+    Column("dias_lactancia", Integer, nullable=False, server_default="75"),
+    CheckConstraint("dias_lactancia IN (60,75,90)", name="ck_rancho_dias_lactancia"),
 )
 account_ranches = Table(
     "usuario_rancho", metadata,
