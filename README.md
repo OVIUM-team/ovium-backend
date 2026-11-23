@@ -126,3 +126,18 @@ docker compose --profile web up --build -d --wait
 Abre http://localhost:5173. Para ver los registros usa `docker compose logs`.
 Para detener los servicios conservando los datos usa
 `docker compose --profile web down`.
+
+## Pesajes
+
+`GET /ranchos/{rancho_id}/animales/{animal_id}/pesajes` devuelve la edad
+actual y el historial cronológico. `POST` en la misma ruta registra `fecha`,
+`tipo` y `peso` en kg. Los tipos del catálogo son `nacimiento`, `destete`,
+`120_d`, `150_d` y `evaluacion`. Se puede enviar un UUID de captura, el peso
+de evaluación y la circunferencia testicular.
+
+La edad se expresa en meses calendario completos y días sobrantes. Sin
+fecha de nacimiento, la edad es nula. La GDP se expresa en kg/día con cuatro
+decimales y se calcula contra la fecha anterior de pesaje. Cuando hay
+varios pesajes en esa fecha, se usa el primero por UUID para mantener un
+resultado estable. La primera fecha del historial tiene GDP nula. La edad
+actual usa la fecha de Ciudad de México y se recalcula en cada consulta.
