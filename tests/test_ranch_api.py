@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import date
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
@@ -11,6 +12,7 @@ from app.config import Settings
 from app.main import app
 from app.models.animals import animals, removals
 from app.models.auth import account_ranches, accounts, auth_engine, metadata
+from app.models.events import weight_types
 from app.services.auth import password_hasher
 
 
@@ -91,13 +93,36 @@ class RanchApiTest(unittest.TestCase):
                     mother = create({"sexo": "hembra"})
                     father = create({"sexo": "macho", "criador": "Criador externo"})
                     official_id = {"tipo": "SINIIGA", "valor": "test-001"}
-                    calf = create({"sexo": "hembra", "madre_id": mother["id"], "padre_id": father["id"],
+                    calf = create({"sexo": "hembra", "fecha_nacimiento": "2026-01-31", "madre_id": mother["id"], "padre_id": father["id"],
                                    "identificadores": [official_id]})
                     item_path = f"{path}/{calf['id']}"
                     detail = client.get(item_path, headers=branch_headers).json()
                     self.assertEqual(detail["madre"]["id"], mother["id"])
                     self.assertEqual(detail["padre"]["id"], father["id"])
                     self.assertEqual(detail["identificadores"], [official_id])
+                    with engine.begin() as connection:
+                        connection.execute(weight_types.insert(), [
+                            {"id": str(uuid4()), "codigo": kind, "nombre": kind}
+                            for kind in ("nacimiento", "destete")
+                        ])
+                    weight_path = f"{item_path}/pesajes"
+                    self.assertEqual(client.get(weight_path, headers=other).status_code, 403)
+                    entries = [
+                        {"fecha": "2026-02-10", "tipo": "destete", "peso": "7.50"},
+                        {"fecha": "2026-01-31", "tipo": "nacimiento", "peso": "4.50"},
+                    ]
+                    self.assertEqual(client.post(weight_path, json=entries[0], headers=branch_headers).status_code, 403)
+                    with patch("app.routes.weights.today", return_value=date(2026, 2, 28)):
+                        for entry in entries:
+                            response = client.post(weight_path, json=entry, headers=owner)
+                            self.assertEqual(response.status_code, 201, response.text)
+                        history = client.get(weight_path, headers=branch_headers).json()
+                        self.assertEqual(history["edad_actual"], {"meses": 1, "dias": 0})
+                        self.assertEqual(history["pesajes"][0]["gdp_kg_dia"], None)
+                        self.assertAlmostEqual(history["pesajes"][1]["gdp_kg_dia"], 0.3)
+                    with patch("app.routes.weights.today", return_value=date(2026, 3, 1)):
+                        history = client.get(weight_path, headers=owner).json()
+                        self.assertEqual(history["edad_actual"], {"meses": 1, "dias": 1})
                     self.assertEqual(client.get(f"{other_path}/{calf['id']}", headers=other).status_code, 404)
                     self.assertEqual(client.get(path + "?sexo=macho", headers=owner).json()[0]["id"], father["id"])
                     self.assertEqual(
