@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -39,8 +39,16 @@ class AnimalCreate(AnimalData):
 
 
 class RemovalData(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
     fecha: date
     motivo: str = Field(min_length=1, max_length=255)
+
+    @field_validator("motivo")
+    @classmethod
+    def nonblank_reason(cls, value):
+        if not value.strip():
+            raise ValueError("El motivo no puede estar vacío")
+        return value.strip()
 
 
 def animal_in_ranch(ranch_id: UUID, animal_id: UUID):
@@ -144,13 +152,31 @@ def remove_animal(
     ranch_id: UUID, animal_id: UUID, data: RemovalData, engine=Depends(database),
     claims: SessionClaims = Depends(require_ranch_access(RanchPermission.EDIT)),
 ):
-    with engine.begin() as connection:
-        result = connection.execute(animals.update().where(
-            animal_in_ranch(ranch_id, animal_id), animals.c.estado == "activo",
-        ).values(estado="baja"))
-        if not result.rowcount:
-            animal_details(connection, ranch_id, animal_id)
-            raise HTTPException(409, "El animal ya está dado de baja")
-        values = {"id": str(uuid4()), "animal_id": str(animal_id), "registrada_por": claims.sub, **data.model_dump()}
-        connection.execute(removals.insert().values(**values))
-    return values
+    from app.routes.weights import today
+
+    try:
+        with engine.begin() as connection:
+            animal = animal_details(connection, ranch_id, animal_id)
+            if data.fecha > today() or (animal["fecha_nacimiento"] and data.fecha < animal["fecha_nacimiento"]):
+                raise HTTPException(422, "Fecha de baja fuera del historial del animal")
+            result = connection.execute(animals.update().where(
+                animal_in_ranch(ranch_id, animal_id), animals.c.estado == "activo",
+            ).values(estado="baja"))
+            if not result.rowcount:
+                raise HTTPException(409, "El animal ya está dado de baja")
+            values = {"id": str(data.id), "animal_id": str(animal_id), "registrada_por": claims.sub,
+                      **data.model_dump(exclude={"id"})}
+            connection.execute(removals.insert().values(**values))
+        return values
+    except IntegrityError:
+        raise HTTPException(409, "El identificador de baja ya existe o la referencia es inválida") from None
+
+
+@router.get("/{animal_id}/baja", dependencies=[Depends(require_ranch_access(RanchPermission.READ))])
+def read_removal(ranch_id: UUID, animal_id: UUID, engine=Depends(database)):
+    with engine.connect() as connection:
+        animal_details(connection, ranch_id, animal_id)
+        row = connection.execute(select(removals).where(removals.c.animal_id == str(animal_id))).mappings().first()
+        if row is None:
+            raise HTTPException(404, "Baja no registrada")
+        return dict(row)
