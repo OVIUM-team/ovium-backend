@@ -46,9 +46,10 @@ class RemovalData(BaseModel):
     @field_validator("motivo")
     @classmethod
     def nonblank_reason(cls, value):
-        if not value.strip():
-            raise ValueError("El motivo no puede estar vacío")
-        return value.strip()
+        value = value.strip().lower()
+        if value not in {"muerte", "venta", "desecho"}:
+            raise ValueError("El motivo debe ser muerte, venta o desecho")
+        return value
 
 
 def animal_in_ranch(ranch_id: UUID, animal_id: UUID):

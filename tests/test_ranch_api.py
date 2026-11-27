@@ -139,7 +139,7 @@ class RanchApiTest(unittest.TestCase):
                     self.assertEqual(client.get(item_path, headers=owner).json()["estado"], "baja")
                     with engine.connect() as connection:
                         self.assertEqual(connection.scalar(select(animals.c.estado).where(animals.c.id == calf["id"])), "baja")
-                        self.assertEqual(connection.scalar(select(removals.c.motivo)), "Venta")
+                        self.assertEqual(connection.scalar(select(removals.c.motivo)), "venta")
             finally:
                 engine.dispose()
                 auth_engine.cache_clear()
