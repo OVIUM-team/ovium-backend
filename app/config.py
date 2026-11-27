@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,3 +8,4 @@ class Settings(BaseSettings):
     database_url: str | None = None
     jwt_secret: str | None = None
     cors_origins: list[str] = []
+    weaning_alert_interval_seconds: int = Field(default=300, ge=0)
