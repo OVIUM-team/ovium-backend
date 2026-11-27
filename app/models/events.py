@@ -104,3 +104,8 @@ photos = Table(
     Column("fecha_captura", DateTime, nullable=False, server_default=func.current_timestamp()),
     Column("registrada_por", ForeignKey("usuario.id"), nullable=False),
 )
+
+weaning_alerts = Table(
+    "alerta_destete", metadata,
+    Column("parto_id", uuid, ForeignKey("parto.id"), primary_key=True),
+)

@@ -141,3 +141,13 @@ decimales y se calcula contra la fecha anterior de pesaje. Cuando hay
 varios pesajes en esa fecha, se usa el primero por UUID para mantener un
 resultado estable. La primera fecha del historial tiene GDP nula. La edad
 actual usa la fecha de Ciudad de México y se recalcula en cada consulta.
+
+### Alertas de destete
+
+Aplica las migraciones con `alembic upgrade head` antes de iniciar la API.
+La API busca partos elegibles al iniciar y después cada 300 segundos.
+Configura `WEANING_ALERT_INTERVAL_SECONDS` para cambiar ese intervalo o usa
+`0` para desactivar la generación en ese proceso.
+
+- `GET /ranchos/{ranch_id}/alertas/destete` lista las alertas pendientes que ya se generaron.
+- `POST /ranchos/{ranch_id}/alertas/destete/{parto_id}/confirmar` cambia a la madre de lactancia a mantenimiento y responde con 204.

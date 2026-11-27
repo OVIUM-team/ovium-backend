@@ -17,6 +17,16 @@ def migrate(engine, revision="head"):
 
 
 class CoreMigrationTest(unittest.TestCase):
+    def test_weaning_alert_migration(self):
+        engine = create_engine("sqlite://")
+        try:
+            migrate(engine)
+            schema = inspect(engine)
+            self.assertEqual(schema.get_pk_constraint("alerta_destete")["constrained_columns"], ["parto_id"])
+            self.assertEqual(schema.get_foreign_keys("alerta_destete")[0]["referred_table"], "parto")
+        finally:
+            engine.dispose()
+
     def test_core_constraints_and_animal_preservation(self):
         with TemporaryDirectory() as directory:
             engine = create_engine(f"sqlite:///{directory}/core.sqlite")

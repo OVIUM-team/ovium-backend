@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
@@ -12,8 +12,9 @@ from app.config import Settings
 from app.main import app
 from app.models.animals import animals, removals
 from app.models.auth import account_ranches, accounts, auth_engine, metadata
-from app.models.events import weight_types
+from app.models.events import birth_offspring, birth_types, births, conception_methods, weaning_alerts, weight_types
 from app.services.auth import password_hasher
+from app.services.weaning import generate_weaning_alerts
 
 
 class RanchApiTest(unittest.TestCase):
@@ -21,7 +22,7 @@ class RanchApiTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             url = f"sqlite:///{directory}/test.sqlite"
             secret = "temporary-signing-secret-for-test-only"
-            with patch.dict(os.environ, DATABASE_URL=url, JWT_SECRET=secret):
+            with patch.dict(os.environ, DATABASE_URL=url, JWT_SECRET=secret, WEANING_ALERT_INTERVAL_SECONDS="0"):
                 settings = Settings()
 
             engine = auth_engine(url)
@@ -123,6 +124,56 @@ class RanchApiTest(unittest.TestCase):
                     with patch("app.routes.weights.today", return_value=date(2026, 3, 1)):
                         history = client.get(weight_path, headers=owner).json()
                         self.assertEqual(history["edad_actual"], {"meses": 1, "dias": 1})
+                    birth_id, birth_type_id, conception_id = (str(uuid4()) for _ in range(3))
+                    with engine.begin() as connection:
+                        connection.execute(animals.update().where(animals.c.id == mother["id"]).values(
+                            estado_reproductivo="lactancia"
+                        ))
+                        connection.execute(birth_types.insert().values(id=birth_type_id, nombre="Simple", numero_crias=1))
+                        connection.execute(conception_methods.insert().values(id=conception_id, codigo="MN", nombre="Natural"))
+                        connection.execute(births.insert().values(
+                            id=birth_id, madre_id=mother["id"], fecha=date(2026, 1, 31),
+                            tipo_parto_id=birth_type_id, metodo_concepcion_id=conception_id,
+                            registrado_por=account_ids["owner"], fecha_captura=datetime(2026, 1, 31),
+                            cierre_edicion=datetime(2026, 2, 1),
+                        ))
+                        connection.execute(birth_offspring.insert().values(
+                            id=str(uuid4()), parto_id=birth_id, animal_id=calf["id"]
+                        ))
+                    alert_path = f"/ranchos/{ranch}/alertas/destete"
+                    confirm_path = f"{alert_path}/{birth_id}/confirmar"
+                    self.assertEqual(client.get(alert_path, headers=other).status_code, 403)
+                    generate_weaning_alerts(engine, date(2026, 3, 31))
+                    with engine.connect() as connection:
+                        self.assertEqual(connection.execute(select(weaning_alerts)).all(), [])
+                    for days, expected in ((60, "2026-04-01"), (75, "2026-04-16"), (90, None)):
+                        updated = client.put(
+                            f"/ranchos/{ranch}", json={"nombre": "Rancho", "dias_lactancia": days}, headers=owner,
+                        )
+                        self.assertEqual(updated.status_code, 200, updated.text)
+                        generate_weaning_alerts(engine, date(2026, 4, 16))
+                        generate_weaning_alerts(engine, date(2026, 4, 16))
+                        with engine.connect() as connection:
+                            self.assertEqual(connection.scalars(select(weaning_alerts.c.parto_id)).all(), [birth_id])
+                        with patch("app.routes.weaning.date") as calendar:
+                            calendar.today.return_value = date(2026, 4, 16)
+                            response = client.get(alert_path, headers=branch_headers)
+                            self.assertEqual(response.status_code, 200, response.text)
+                            self.assertEqual(response.json(), [
+                                {"parto_id": birth_id, "madre_id": mother["id"], "fecha_destete": expected}
+                            ] if expected else [])
+                            if days == 90:
+                                self.assertEqual(client.post(confirm_path, headers=owner).status_code, 409)
+                    self.assertEqual(client.post(confirm_path, headers=branch_headers).status_code, 403)
+                    with patch("app.routes.weaning.date") as calendar:
+                        calendar.today.return_value = date(2026, 5, 1)
+                        confirmed = client.post(confirm_path, headers=owner)
+                        self.assertEqual(confirmed.status_code, 204, confirmed.text)
+                        self.assertEqual(client.get(alert_path, headers=owner).json(), [])
+                        self.assertEqual(client.post(confirm_path, headers=owner).status_code, 404)
+                    self.assertEqual(
+                        client.get(f"{path}/{mother['id']}", headers=owner).json()["estado_reproductivo"], "mantenimiento"
+                    )
                     self.assertEqual(client.get(f"{other_path}/{calf['id']}", headers=other).status_code, 404)
                     self.assertEqual(client.get(path + "?sexo=macho", headers=owner).json()[0]["id"], father["id"])
                     self.assertEqual(
